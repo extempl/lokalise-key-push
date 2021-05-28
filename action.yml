@@ -22,6 +22,9 @@ inputs:
   filename:
     description: The Lokalise filename to use on new keys
     required: true
+  ref:
+    description: Branch ref for tagging
+    required: false
     
 runs:
   using: 'node12'

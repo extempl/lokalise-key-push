@@ -10,6 +10,7 @@ const directory = ghCore.getInput('directory');
 const format = ghCore.getInput('format');
 const platform = ghCore.getInput('platform');
 const filename = ghCore.getInput('filename');
+const ref = ghCore.getInput('ref');
 
 core({
   apiKey,
@@ -18,6 +19,7 @@ core({
   format,
   platform,
   filename,
+  ref
 }, {
   LokaliseApi,
   fs

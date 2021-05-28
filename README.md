@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v1
-    - uses: dmmikkel/lokalise-key-push@v3.4
+    - uses: extempl/lokalise-key-push@v3.5
       with:
         # Api token for the Lokalise account
         # with read/write access to the project

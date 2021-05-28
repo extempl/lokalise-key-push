@@ -6,6 +6,7 @@ const LANG_ISO_PLACEHOLDER = '%LANG_ISO%';
 
 let _context;
 let _lokalise;
+let _fs;
 
 module.exports = async (context, { LokaliseApi, fs }) => {
   _context = context;
@@ -31,7 +32,7 @@ module.exports = async (context, { LokaliseApi, fs }) => {
 function buildLokaliseCreateKeysRequest (toCreate) {
   console.log('Keys to push:');
   const uploadKeys = [];
-  for (const key in toCreate) {
+  Object.keys(toCreate).forEach(key => {
     console.log('    ' + key);
     const lokaliseKey = {
       key_name: key,
@@ -41,21 +42,24 @@ function buildLokaliseCreateKeysRequest (toCreate) {
         [_context.platform]: _context.filename
       }
     };
-    for (const lang in toCreate[key]) {
+    if (_context.ref) {
+      lokaliseKey.tags = [_context.ref];
+    }
+    Object.keys(toCreate[key]).forEach(lang => {
       console.log(`        ${lang}: ${toCreate[key][lang]}`);
       lokaliseKey.translations.push({
         language_iso: lang,
         translation: toCreate[key][lang]
       });
-    }
+    });
     uploadKeys.push(lokaliseKey);
-  }
+  });
   return uploadKeys;
 }
 
 function getKeysToCreate (localKeys, remoteKeys) {
   const toCreate = {};
-  for (const lang in localKeys) {
+  Object.keys(localKeys).forEach(lang => {
     localKeys[lang].forEach(({ key, value }) => {
       const keyExists = remoteKeys.some(x => x.key_name[_context.platform] === key);
       if (!keyExists) {
@@ -65,7 +69,7 @@ function getKeysToCreate (localKeys, remoteKeys) {
         toCreate[key][lang] = value;
       }
     })
-  }
+  })
   return toCreate;
 }
 
@@ -89,7 +93,7 @@ async function getLocalKeys () {
         default:
           throw new Error('No parser found for format');
       }
-      console.log(`Found ${pairs.length} keys in languge file for '${lang}'`);
+      console.log(`Found ${pairs.length} keys in language file for '${lang}'`);
       languageKeys[lang] = pairs;
     } catch (error) {
       console.error(`Error reading language file ${lang}: ${error.message}`)
@@ -105,13 +109,24 @@ async function getRemoteKeys () {
     projectId,
     platform,
   } = _context;
-  return await _lokalise
-    .keys
-    .list({
-      project_id: projectId,
-      filter_platforms: platform,
-      limit: 5000 // TODO: Implement pagination if more than 5000 keys
-    });
+
+  const loadMore = async (page = 1) => await _lokalise.keys.list({
+    project_id: projectId,
+    filter_platforms: platform,
+    page,
+    limit: 5000
+  });
+
+  let keys = [];
+
+  let newKeys;
+
+  for (let page = 1; !newKeys || newKeys.hasNextPage(); page++) {
+    newKeys = await loadMore(page);
+    keys = keys.concat(newKeys.items);
+  }
+
+  return keys;
 }
 
 function buildLanguageFilePath (languageCode) {
@@ -122,7 +137,7 @@ async function getLanguageISOCodes () {
   const languages = await _lokalise.languages.list({
     project_id: _context.projectId
   });
-  return languages.map(x => x.lang_iso);
+  return languages.items.map(x => x.lang_iso);
 }
 
 function readLanguageFile (lang) {
