@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "ncc build index.js -o dist"
   },
   "keywords": [],
   "author": "",
@@ -13,5 +14,8 @@
     "@actions/core": "^1.1.1",
     "@lokalise/node-api": "^6.2.1",
     "properties-parser": "^0.3.1"
+  },
+  "devDependencies": {
+    "@vercel/ncc": "^0.28.6"
   }
 }
