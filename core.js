@@ -26,6 +26,7 @@ module.exports = async (context, { LokaliseApi, fs }) => {
     console.log(`Pushing ${createRequest.length} new keys to Lokalise`);
     await _lokalise.keys.create(createRequest, { project_id: _context.projectId });
     console.log('Push done!');
+    return keysToCreate;
   }
 }
 
