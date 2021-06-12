@@ -40,6 +40,7 @@ module.exports = async (context, { LokaliseApi, fs }) => {
     console.log(`Pushing ${createRequest.length} new keys to Lokalise`);
     await _lokalise.keys.create(createRequest, { project_id: _context.projectId });
     console.log('Push done!');
+    return keysToCreate;
   }
 }
 
@@ -10139,6 +10140,9 @@ core({
 }, {
   LokaliseApi,
   fs
+})
+.then((result) => {
+  ghCore.setOutput('result', JSON.stringify(result));
 })
 .then(() => console.log('Finished'))
 .catch(error => ghCore.setFailed(error ? error.message : 'Unknown error'))

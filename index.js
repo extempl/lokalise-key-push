@@ -24,6 +24,8 @@ core({
   LokaliseApi,
   fs
 })
-.then(ghCore.setOutput.bind(ghCore, 'result'))
+.then((result) => {
+  ghCore.setOutput('result', JSON.stringify(result));
+})
 .then(() => console.log('Finished'))
 .catch(error => ghCore.setFailed(error ? error.message : 'Unknown error'))
