@@ -10,6 +10,7 @@ const directory = ghCore.getInput('directory');
 const format = ghCore.getInput('format');
 const platform = ghCore.getInput('platform');
 const filename = ghCore.getInput('filename');
+const useFilepath = ghCore.getInput('use-filepath');
 const ref = ghCore.getInput('ref');
 
 core({
@@ -19,6 +20,7 @@ core({
   format,
   platform,
   filename,
+  useFilepath,
   ref
 }, {
   LokaliseApi,
