@@ -16,6 +16,7 @@ const ref = ghCore.getInput('ref');
 core({
   apiKey,
   projectId,
+  rawDirectory: directory,
   directory: path.join(process.env.GITHUB_WORKSPACE, directory),
   format,
   platform,

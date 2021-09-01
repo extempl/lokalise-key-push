@@ -33,7 +33,7 @@ module.exports = async (context, { LokaliseApi, fs }) => {
 function buildLokaliseCreateKeysRequest (toCreate) {
   console.log('Keys to push:');
   const uploadKeys = [];
-  const filename = _context.useFilepath === 'true' ? path.join(_context.directory, _context.filename) : _context.filename;
+  const filename = _context.useFilepath === 'true' ? path.join(_context.rawDirectory, _context.filename) : _context.filename;
   Object.keys(toCreate).forEach(key => {
     console.log('    ' + key);
     const lokaliseKey = {
