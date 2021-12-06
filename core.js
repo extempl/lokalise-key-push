@@ -177,7 +177,7 @@ function composeActionsFromDiffSequence (diffSequence, keysToCreate, keysToUpdat
       change.edited.forEach(edited => {
         const key = Object.keys(edited)[0];
         const normalizedKey = normalizeKey(key);
-        if (keysToCreate[normalizedKey]?.[language]) {
+        if ((keysToCreate[normalizedKey] || {})[language]) {
           keysToCreate[normalizedKey][language] = edited[key].newvalue;
         } else {
           if (!keysToUpdate[normalizedKey]) {
@@ -188,7 +188,7 @@ function composeActionsFromDiffSequence (diffSequence, keysToCreate, keysToUpdat
       });
       Object.keys(change.removed).forEach(key => {
         key = normalizeKey(key);
-        if (keysToCreate[key]?.[language] !== undefined) {
+        if ((keysToCreate[key] || {})[language] !== undefined) {
           delete keysToCreate[key][language];
           delete keysToUpdate[key][language];
         }
