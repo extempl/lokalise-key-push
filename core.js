@@ -1,33 +1,191 @@
 const path = require('path');
-const jsonFormatParser = require('./json-format-parser');
-const propertiesFormatParser = require('./properties-format-parser');
+const propertiesFormatParser = require('properties-parser');
+const { Octokit } = require("octokit");
+const { JsonDiffer } = require('json-difference');
+const jsondifference = new JsonDiffer();
 
 const LANG_ISO_PLACEHOLDER = '%LANG_ISO%';
 
 let _context;
 let _lokalise;
 let _fs;
+let _octokitUrl;
+let _octokit;
 
 module.exports = async (context, { LokaliseApi, fs }) => {
   _context = context;
   _lokalise = new LokaliseApi({ apiKey: context.apiKey });
   _fs = fs;
-  
-  const remoteKeys = await getRemoteKeys();
-  console.log(`${remoteKeys.length} remote keys.`);
+  _octokit = new Octokit({ auth: _context.repoToken });
+  _octokitUrl = `/repos/${_context.repoOwner}/${_context.repoName}`
 
-  const localKeys = await getLocalKeys();
+  const { data: compareResult } = await _octokit.request(_octokitUrl + '/compare/master...{ref}', { ref: context.ref });
 
-  const keysToCreate = getKeysToCreate(localKeys, remoteKeys);
+  if (compareResult.ahead_by === 0) {
+    return "No ahead commits";
+  }
+
+  const diffSequence = await composeDiffSequence(compareResult);
+
+  if (!Object.keys(diffSequence).length) {
+    return "No changes in i18n files found"; // should never appear and be prevented by workflow rules
+  }
+
+  const keysToCreate = {};
+  const keysToUpdate = {};
+  const keysToDelete = [];
+
+  composeActionsFromDiffSequence(diffSequence, keysToCreate, keysToUpdate, keysToDelete);
 
   const createRequest = buildLokaliseCreateKeysRequest(keysToCreate);
-  
+
+  const failedToCreateKeys = [];
   if (createRequest.length > 0) {
     console.log(`Pushing ${createRequest.length} new keys to Lokalise`);
-    await _lokalise.keys.create(createRequest, { project_id: _context.projectId });
-    console.log('Push done!');
-    return keysToCreate;
+    const createResult = await _lokalise.keys.create(createRequest, { project_id: _context.projectId });
+    createResult.items.forEach(keyObj => {
+      delete keysToUpdate[keyObj.key_name[_context.platform]]
+    });
+    failedToCreateKeys.push(...createResult.errors.filter(e => e.message === 'This key name is already taken').map(e => e.key_name[_context.platform]));
+    // TODO handle other errors? Are there any?
+    console.log(`Push done! Success: ${createResult.items.length}; error: ${createResult.errors.length}.`);
   }
+
+  const keysToUpdateList = [...new Set(Object.keys(keysToUpdate).concat(failedToCreateKeys))];
+  if (keysToUpdateList.length) {
+    const keysToUpdateData = await _lokalise.keys.list({
+      project_id: _context.projectId,
+      filter_platforms: _context.platform,
+      include_translations: 1,
+      limit: 5000,
+      filter_keys: keysToUpdateList.toString()
+    });
+
+    const translationsIds = keysToUpdateData.items.reduce((memo, keyObj) => {
+      const key = keyObj.key_name[_context.platform];
+      memo[key] = keyObj.translations.reduce((memo1, translationObj) => {
+        if (translationObj.translation === keysToUpdate[key][translationObj.language_iso]) {
+          delete keysToUpdate[key][translationObj.language_iso];
+        }
+        memo1[translationObj.language_iso] = translationObj.translation_id;
+        return memo1;
+      }, {});
+      return memo;
+    }, {});
+
+    Object.keys(keysToUpdate).filter(key => !Object.keys(keysToUpdate[key]).length).forEach(key => delete keysToUpdate[key]);
+
+    if (Object.keys(keysToUpdate).length) {
+      console.log(`Updating translations for following keys on Lokalise: ${Object.keys(keysToUpdate).toString()}`)
+      for (const key in keysToUpdate) {
+        for (const language in keysToUpdate[key]) {
+          await _lokalise.translations.update(
+              translationsIds[key][language],
+              { translation: keysToUpdate[key][language] },
+              { project_id: _context.projectId }
+          );
+        }
+      }
+      console.log('Update is done!');
+    }
+  }
+
+  if (keysToDelete.length) {
+    const keysToDeleteData = await _lokalise.keys.list({
+      project_id: _context.projectId,
+      filter_platforms: _context.platform,
+      limit: 5000,
+      filter_keys: keysToDelete.toString()
+    });
+
+    const keyIdsToDelete = keysToDeleteData.items.map(keyObj => keyObj.key_id);
+    console.log(`Deleting ${keysToDelete.length} keys from Lokalise`);
+    await _lokalise.keys.bulk_delete(keyIdsToDelete, { project_id: _context.projectId });
+    console.log(`Delete request is done!`);
+  }
+}
+
+async function composeDiffSequence(compareResult) {
+  const filenamePattern = new RegExp(_context.filename.replace(LANG_ISO_PLACEHOLDER, '(\\w\\w)').substr(1));
+
+  const diffSequence = {};
+  // const filesContent = {};
+  const previousContents = {};
+  for (const commit of compareResult.commits) {
+    const { data: commitResult } = await _octokit.request(_octokitUrl + '/commits/{sha}', {
+      sha: commit.sha
+    });
+    const i18nFiles = commitResult.files.filter(file => file.filename.startsWith(_context.rawDirectory));
+
+    for (const file of i18nFiles) {
+      const language = file.filename.match(filenamePattern)[1];
+
+      const jsonFileContent = await getFileContent(file.filename, commit.sha);
+
+      // filesContent[commit.sha] ||= {};
+      // filesContent[commit.sha][language] ||= jsonFileContent;
+
+      const parentSha = commit.parents[0].sha;
+      const jsonPreviousContent = previousContents[language] || await getFileContent(file.filename, parentSha);
+
+      const jsonDifferenceResult = jsondifference.getDiff(jsonPreviousContent, jsonFileContent);
+      if (Object.keys(jsonDifferenceResult.new).length ||
+          Object.keys(jsonDifferenceResult.removed).length ||
+          jsonDifferenceResult.edited.length) {
+        diffSequence[language] ||= [];
+        diffSequence[language].push(jsonDifferenceResult);
+      }
+
+      previousContents[language] = jsonFileContent;
+    }
+  }
+
+  return diffSequence;
+}
+
+async function getFileContent(path, ref) {
+  const { data: fileContent } = await _octokit.request(_octokitUrl + '/contents/{path}?ref={ref}', {
+    path, ref, headers: { accept: 'application/vnd.github.VERSION.raw' }
+  });
+
+  if (_context.format === 'properties') {
+    return propertiesFormatParser.parse(fileContent);
+  } else {
+    JSON.parse(fileContent)
+  }
+}
+
+function composeActionsFromDiffSequence (diffSequence, keysToCreate, keysToUpdate, keysToDelete) {
+  Object.keys(diffSequence).forEach(language => {
+    const fileDiffSequence = diffSequence[language];
+    fileDiffSequence.forEach(change => {
+      Object.keys(change.new).forEach(key => {
+        const normalizedKey = normalizeKey(key);
+        keysToCreate[normalizedKey] ||= {};
+        keysToCreate[normalizedKey][language] = change.new[key];
+        keysToUpdate[normalizedKey] ||= {};
+        keysToUpdate[normalizedKey][language] = change.new[key];
+      });
+      change.edited.forEach(edited => {
+        const key = Object.keys(edited)[0];
+        const normalizedKey = normalizeKey(key);
+        if (keysToCreate[normalizedKey]?.[language]) {
+          keysToCreate[normalizedKey][language] = edited[key].newvalue;
+        } else {
+          keysToUpdate[normalizedKey] ||= {};
+          keysToUpdate[normalizedKey][language] = edited[key].newvalue;
+        }
+      });
+      Object.keys(change.removed).forEach(key => {
+        key = normalizeKey(key);
+        if (keysToCreate[key]?.[language] !== undefined) {
+          delete keysToCreate[key][language];
+          delete keysToUpdate[key][language];
+        }
+        keysToDelete.push(key);
+      })
+    });
+  });
 }
 
 function buildLokaliseCreateKeysRequest (toCreate) {
@@ -41,7 +199,7 @@ function buildLokaliseCreateKeysRequest (toCreate) {
       platforms: [_context.platform],
       translations: [],
       filenames: {
-        [_context.platform]: filename
+        [_context.platform]: _context.debugFilename || filename
       }
     };
     if (_context.ref) {
@@ -59,99 +217,6 @@ function buildLokaliseCreateKeysRequest (toCreate) {
   return uploadKeys;
 }
 
-function getKeysToCreate (localKeys, remoteKeys) {
-  const toCreate = {};
-  Object.keys(localKeys).forEach(lang => {
-    localKeys[lang].forEach(({ key, value }) => {
-      const keyExists = remoteKeys.some(x => x.key_name[_context.platform] === key);
-      if (!keyExists) {
-        if (!(key in toCreate)) {
-          toCreate[key] = {};
-        }
-        toCreate[key][lang] = value;
-      }
-    })
-  })
-  return toCreate;
-}
-
-async function getLocalKeys () {
-  const languageCodes = await getLanguageISOCodes();
-  console.log('Project language codes', languageCodes);
-
-  const languageKeys = {};
-
-  const readFilePromises = languageCodes.map(async (lang) => {
-    try {
-      const data = await readLanguageFile(lang);
-      let pairs;
-      switch (_context.format) {
-        case 'json':
-          pairs = jsonFormatParser(data);
-          break;
-        case 'properties':
-          pairs = propertiesFormatParser(data);
-          break;
-        default:
-          throw new Error('No parser found for format');
-      }
-      console.log(`Found ${pairs.length} keys in language file for '${lang}'`);
-      languageKeys[lang] = pairs;
-    } catch (error) {
-      console.error(`Error reading language file ${lang}: ${error.message}`)
-    }
-  })
-
-  await Promise.all(readFilePromises);
-  return languageKeys;
-}
-
-async function getRemoteKeys () {
-  const {
-    projectId,
-    platform,
-  } = _context;
-
-  const loadMore = async (page = 1) => await _lokalise.keys.list({
-    project_id: projectId,
-    filter_platforms: platform,
-    page,
-    limit: 5000
-  });
-
-  let keys = [];
-
-  let newKeys;
-
-  for (let page = 1; !newKeys || newKeys.hasNextPage(); page++) {
-    newKeys = await loadMore(page);
-    keys = keys.concat(newKeys.items);
-  }
-
-  return keys;
-}
-
-function buildLanguageFilePath (languageCode) {
-  return path.join(_context.directory, _context.filename.replace(LANG_ISO_PLACEHOLDER, languageCode))
-}
-
-async function getLanguageISOCodes () {
-  const languages = await _lokalise.languages.list({
-    project_id: _context.projectId
-  });
-  return languages.items.map(x => x.lang_iso);
-}
-
-function readLanguageFile (lang) {
-  const path = buildLanguageFilePath(lang);
-  return new Promise((resolve, reject) => {
-    _fs.readFile(path, 'utf-8', (err, data) => {
-      if (err) {
-        reject(err);
-        return;
-      }
-      console.log('Read language file ' + path);
-      resolve(data);
-    });
-  })
+function normalizeKey (key) {
+  return _context.format === 'json' ? key.replaceAll('/', '::') : key;
 }

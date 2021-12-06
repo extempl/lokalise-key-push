@@ -12,6 +12,10 @@ const platform = ghCore.getInput('platform');
 const filename = ghCore.getInput('filename');
 const useFilepath = ghCore.getInput('use-filepath');
 const ref = ghCore.getInput('ref');
+const repoOwner = ghCore.getInput('owner');
+const repoName = ghCore.getInput('repo');
+const repoToken = ghCore.getInput('repo-token');
+const bundlesDir = ghCore.getInput('bundles-dir');
 
 core({
   apiKey,
@@ -22,7 +26,11 @@ core({
   platform,
   filename,
   useFilepath,
-  ref
+  ref,
+  repoOwner,
+  repoName,
+  repoToken,
+  bundlesDir
 }, {
   LokaliseApi,
   fs

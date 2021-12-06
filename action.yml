@@ -28,7 +28,16 @@ inputs:
   ref:
     description: Branch ref for tagging
     required: false
-    
+  owner:
+    description: Repo owner
+    required: true
+  repo:
+    description: Repo name
+    required: true
+  repo-token:
+    description: Token for github requests (used for read only - contents, commits, compare)
+    required: true
+
 runs:
   using: 'node12'
   main: 'dist/index.js'
