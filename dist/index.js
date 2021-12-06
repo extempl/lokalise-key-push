@@ -29425,7 +29425,6 @@ const useFilepath = ghCore.getInput('use-filepath');
 const ref = ghCore.getInput('ref');
 const repository = ghCore.getInput('repository');
 const repoToken = ghCore.getInput('repo-token');
-const bundlesDir = ghCore.getInput('bundles-dir');
 
 core({
   apiKey,
@@ -29438,8 +29437,7 @@ core({
   useFilepath,
   ref,
   repository,
-  repoToken,
-  bundlesDir
+  repoToken
 }, {
   LokaliseApi,
   fs
