@@ -12,6 +12,8 @@ let _fs;
 let _octokitUrl;
 let _octokit;
 
+
+// TODO skip merge commits, but take newest version of files as a previous contents
 module.exports = async (context, { LokaliseApi, fs }) => {
   _context = context;
   _lokalise = new LokaliseApi({ apiKey: context.apiKey });
@@ -132,7 +134,9 @@ async function composeDiffSequence(compareResult) {
       if (Object.keys(jsonDifferenceResult.new).length ||
           Object.keys(jsonDifferenceResult.removed).length ||
           jsonDifferenceResult.edited.length) {
-        diffSequence[language] ||= [];
+        if (!diffSequence[language]) {
+          diffSequence[language] = [];
+        }
         diffSequence[language].push(jsonDifferenceResult);
       }
 
@@ -161,9 +165,13 @@ function composeActionsFromDiffSequence (diffSequence, keysToCreate, keysToUpdat
     fileDiffSequence.forEach(change => {
       Object.keys(change.new).forEach(key => {
         const normalizedKey = normalizeKey(key);
-        keysToCreate[normalizedKey] ||= {};
+        if (!keysToCreate[normalizedKey]) {
+          keysToCreate[normalizedKey] = {};
+        }
         keysToCreate[normalizedKey][language] = change.new[key];
-        keysToUpdate[normalizedKey] ||= {};
+        if (!keysToUpdate[normalizedKey]) {
+          keysToUpdate[normalizedKey] = {};
+        }
         keysToUpdate[normalizedKey][language] = change.new[key];
       });
       change.edited.forEach(edited => {
@@ -172,7 +180,9 @@ function composeActionsFromDiffSequence (diffSequence, keysToCreate, keysToUpdat
         if (keysToCreate[normalizedKey]?.[language]) {
           keysToCreate[normalizedKey][language] = edited[key].newvalue;
         } else {
-          keysToUpdate[normalizedKey] ||= {};
+          if (!keysToUpdate[normalizedKey]) {
+            keysToUpdate[normalizedKey] = {};
+          }
           keysToUpdate[normalizedKey][language] = edited[key].newvalue;
         }
       });
