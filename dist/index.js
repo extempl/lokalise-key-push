@@ -136,7 +136,15 @@ async function composeDiffSequence(compareResult) {
     for (const file of i18nFiles) {
       const language = file.filename.match(filenamePattern)[1];
 
-      const jsonFileContent = await getFileContent(file.filename, commit.sha);
+      const jsonFileContent = await getFileContent(file.filename, commit.sha).catch((e) => {
+        if (e.name === 'SyntaxError') {
+          return null;
+        }
+        throw e;
+      });
+      if (!jsonFileContent) {
+        continue;
+      }
 
       // filesContent[commit.sha] ||= {};
       // filesContent[commit.sha][language] ||= jsonFileContent;
