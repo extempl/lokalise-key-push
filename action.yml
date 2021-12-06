@@ -28,11 +28,8 @@ inputs:
   ref:
     description: Branch ref for tagging
     required: false
-  owner:
-    description: Repo owner
-    required: true
-  repo:
-    description: Repo name
+  repository:
+    description: github.repository
     required: true
   repo-token:
     description: Token for github requests (used for read only - contents, commits, compare)

@@ -12,8 +12,7 @@ const platform = ghCore.getInput('platform');
 const filename = ghCore.getInput('filename');
 const useFilepath = ghCore.getInput('use-filepath');
 const ref = ghCore.getInput('ref');
-const repoOwner = ghCore.getInput('owner');
-const repoName = ghCore.getInput('repo');
+const repository = ghCore.getInput('repository');
 const repoToken = ghCore.getInput('repo-token');
 const bundlesDir = ghCore.getInput('bundles-dir');
 
@@ -27,8 +26,7 @@ core({
   filename,
   useFilepath,
   ref,
-  repoOwner,
-  repoName,
+  repository,
   repoToken,
   bundlesDir
 }, {

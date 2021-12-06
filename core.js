@@ -17,7 +17,7 @@ module.exports = async (context, { LokaliseApi, fs }) => {
   _lokalise = new LokaliseApi({ apiKey: context.apiKey });
   _fs = fs;
   _octokit = new Octokit({ auth: _context.repoToken });
-  _octokitUrl = `/repos/${_context.repoOwner}/${_context.repoName}`
+  _octokitUrl = `/repos/${_context.repository}`
 
   const { data: compareResult } = await _octokit.request(_octokitUrl + '/compare/master...{ref}', { ref: context.ref });
 
