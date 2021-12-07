@@ -131,7 +131,7 @@ async function composeDiffSequence(compareResult) {
     const { data: commitResult } = await _octokit.request(_octokitUrl + '/commits/{sha}', {
       sha: commit.sha
     });
-    const i18nFiles = commitResult.files.filter(file => file.filename.startsWith(_context.rawDirectory));
+    const i18nFiles = commitResult.files.filter(file => filenamePattern.test(file.filename));
 
     for (const file of i18nFiles) {
       const language = file.filename.match(filenamePattern)[1];
