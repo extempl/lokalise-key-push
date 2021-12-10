@@ -163,7 +163,7 @@ async function getFileContent(path, ref) {
   if (_context.format === 'properties') {
     return propertiesFormatParser.parse(fileContent);
   } else {
-    JSON.parse(fileContent)
+    return JSON.parse(fileContent);
   }
 }
 
