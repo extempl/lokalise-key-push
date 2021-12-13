@@ -236,5 +236,5 @@ function buildLokaliseCreateKeysRequest (toCreate) {
 }
 
 function normalizeKey (key) {
-  return _context.format === 'json' ? key.replaceAll('/', '::') : key;
+  return _context.format === 'json' ? key.split('/').join('::') : key;
 }
