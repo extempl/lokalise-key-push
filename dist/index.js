@@ -27,7 +27,6 @@ let _octokitUrl;
 let _octokit;
 
 
-// TODO skip merge commits, but take newest version of files as a previous contents
 module.exports = async (context, { LokaliseApi, fs }) => {
   _context = context;
   _lokalise = new LokaliseApi({ apiKey: context.apiKey });
@@ -49,22 +48,43 @@ module.exports = async (context, { LokaliseApi, fs }) => {
 
   const keysToCreate = {};
   const keysToUpdate = {};
-  const keysToDelete = [];
+  const keysToDelete = new Set();
 
   composeActionsFromDiffSequence(diffSequence, keysToCreate, keysToUpdate, keysToDelete);
 
-  const createRequest = buildLokaliseCreateKeysRequest(keysToCreate);
+  Object.keys(keysToCreate).filter(key => !Object.keys(keysToCreate[key]).length).forEach(key => delete keysToCreate[key]);
 
+  const keysToCreateList = Object.keys(keysToCreate);
   const failedToCreateKeys = [];
-  if (createRequest.length > 0) {
-    console.log(`Pushing ${createRequest.length} new keys to Lokalise`);
-    const createResult = await _lokalise.keys.create(createRequest, { project_id: _context.projectId });
-    createResult.items.forEach(keyObj => {
-      delete keysToUpdate[keyObj.key_name[_context.platform]]
+  if (keysToCreateList.length) {
+    const existingKeysResult = await _lokalise.keys.list({
+      project_id: _context.projectId,
+      filter_platforms: _context.platform,
+      limit: 5000,
+      filter_keys: keysToCreateList.toString()
     });
-    failedToCreateKeys.push(...createResult.errors.filter(e => e.message === 'This key name is already taken').map(e => e.key_name[_context.platform]));
-    // TODO handle other errors? Are there any?
-    console.log(`Push done! Success: ${createResult.items.length}; error: ${createResult.errors.length}.`);
+
+    let allToCreateInPlace = false;
+    if (existingKeysResult.totalResults < keysToCreateList.length) {
+      existingKeysResult.items.forEach(keyObj => {
+        delete keysToCreate[keyObj.key_name[_context.platform]];
+      })
+    } else {
+      allToCreateInPlace = true;
+    }
+
+
+    if (!allToCreateInPlace && Object.keys(keysToCreate).length > 0) {
+      const createRequest = buildLokaliseCreateKeysRequest(keysToCreate);
+      console.log(`Pushing ${createRequest.length} new keys to Lokalise`);
+      const createResult = await _lokalise.keys.create(createRequest, { project_id: _context.projectId });
+      createResult.items.forEach(keyObj => {
+        delete keysToUpdate[keyObj.key_name[_context.platform]]
+      });
+      failedToCreateKeys.push(...createResult.errors.filter(e => e.message === 'This key name is already taken').map(e => e.key_name[_context.platform]));
+      // TODO handle other errors? Are there any?
+      console.log(`Push done! Success: ${createResult.items.length}; error: ${createResult.errors.length}.`);
+    }
   }
 
   const keysToUpdateList = [...new Set(Object.keys(keysToUpdate).concat(failedToCreateKeys))];
@@ -80,7 +100,7 @@ module.exports = async (context, { LokaliseApi, fs }) => {
     const translationsIds = keysToUpdateData.items.reduce((memo, keyObj) => {
       const key = keyObj.key_name[_context.platform];
       memo[key] = keyObj.translations.reduce((memo1, translationObj) => {
-        if (translationObj.translation === keysToUpdate[key][translationObj.language_iso]) {
+        if (translationObj.translation === keysToUpdate[key]?.[translationObj.language_iso]) {
           delete keysToUpdate[key][translationObj.language_iso];
         }
         memo1[translationObj.language_iso] = translationObj.translation_id;
@@ -106,18 +126,21 @@ module.exports = async (context, { LokaliseApi, fs }) => {
     }
   }
 
-  if (keysToDelete.length) {
+  if (keysToDelete.size) {
     const keysToDeleteData = await _lokalise.keys.list({
       project_id: _context.projectId,
       filter_platforms: _context.platform,
       limit: 5000,
-      filter_keys: keysToDelete.toString()
+      filter_keys: [...keysToDelete].toString()
     });
 
-    const keyIdsToDelete = keysToDeleteData.items.map(keyObj => keyObj.key_id);
-    console.log(`Deleting ${keysToDelete.length} keys from Lokalise`);
-    await _lokalise.keys.bulk_delete(keyIdsToDelete, { project_id: _context.projectId });
-    console.log(`Delete request is done!`);
+    if (keysToDeleteData.totalResults) {
+      const keyIdsToDelete = keysToDeleteData.items.map(keyObj => keyObj.key_id);
+      console.log(`Deleting keys from Lokalise: \n    ${keysToDeleteData.items.map(
+          keyObj => keyObj.key_name[_context.platform]).join('\n    ')}`);
+      await _lokalise.keys.bulk_delete(keyIdsToDelete, { project_id: _context.projectId });
+      console.log(`Delete request is done!`);
+    }
   }
 }
 
@@ -150,7 +173,16 @@ async function composeDiffSequence(compareResult) {
       // filesContent[commit.sha][language] ||= jsonFileContent;
 
       const parentSha = commit.parents[0].sha;
-      const jsonPreviousContent = previousContents[language] || await getFileContent(file.filename, parentSha);
+      const jsonPreviousContent = previousContents[language] || await getFileContent(file.filename, parentSha).catch((e) => {
+        if (e.name === 'SyntaxError' || e.status === 404) {
+          return null;
+        }
+        throw e;
+      });
+
+      if (!jsonPreviousContent) {
+        continue;
+      }
 
       const jsonDifferenceResult = jsondifference.getDiff(jsonPreviousContent, jsonFileContent);
       if (Object.keys(jsonDifferenceResult.new).length ||
@@ -210,11 +242,14 @@ function composeActionsFromDiffSequence (diffSequence, keysToCreate, keysToUpdat
       });
       Object.keys(change.removed).forEach(key => {
         key = normalizeKey(key);
+        keysToDelete.add(key);
         if ((keysToCreate[key] || {})[language] !== undefined) {
           delete keysToCreate[key][language];
           delete keysToUpdate[key][language];
+          if (!Object.keys(keysToCreate[key]).length) {
+            keysToDelete.delete(key);
+          }
         }
-        keysToDelete.push(key);
       })
     });
   });
