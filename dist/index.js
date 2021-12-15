@@ -100,7 +100,7 @@ module.exports = async (context, { LokaliseApi, fs }) => {
     const translationsIds = keysToUpdateData.items.reduce((memo, keyObj) => {
       const key = keyObj.key_name[_context.platform];
       memo[key] = keyObj.translations.reduce((memo1, translationObj) => {
-        if (translationObj.translation === keysToUpdate[key]?.[translationObj.language_iso]) {
+        if (translationObj.translation === (keysToUpdate[key] || {})[translationObj.language_iso]) {
           delete keysToUpdate[key][translationObj.language_iso];
         }
         memo1[translationObj.language_iso] = translationObj.translation_id;
