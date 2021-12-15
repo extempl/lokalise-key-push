@@ -57,16 +57,11 @@ module.exports = async (context, { LokaliseApi, fs }) => {
   const keysToCreateList = Object.keys(keysToCreate);
   const failedToCreateKeys = [];
   if (keysToCreateList.length) {
-    const existingKeysResult = await _lokalise.keys.list({
-      project_id: _context.projectId,
-      filter_platforms: _context.platform,
-      limit: 5000,
-      filter_keys: keysToCreateList.toString()
-    });
+    const existingKeysResult = await getRemoteKeys({ filter_keys: keysToCreateList.toString() });
 
     let allToCreateInPlace = false;
-    if (existingKeysResult.totalResults < keysToCreateList.length) {
-      existingKeysResult.items.forEach(keyObj => {
+    if (existingKeysResult.length < keysToCreateList.length) {
+      existingKeysResult.forEach(keyObj => {
         delete keysToCreate[keyObj.key_name[_context.platform]];
       })
     } else {
@@ -89,37 +84,46 @@ module.exports = async (context, { LokaliseApi, fs }) => {
 
   const keysToUpdateList = [...new Set(Object.keys(keysToUpdate).concat(failedToCreateKeys))];
   if (keysToUpdateList.length) {
-    const keysToUpdateData = await _lokalise.keys.list({
-      project_id: _context.projectId,
-      filter_platforms: _context.platform,
-      include_translations: 1,
-      limit: 5000,
-      filter_keys: keysToUpdateList.toString()
-    });
+    const updateConfig = { include_translations: 1 };
+    if (keysToUpdateList.length < 1000) {
+      updateConfig.filter_keys = keysToUpdateList.toString();
+    }
+    const keysToUpdateData = await getRemoteKeys(updateConfig);
 
-    const translationsIds = keysToUpdateData.items.reduce((memo, keyObj) => {
+    const translationsIds = keysToUpdateData.reduce((memo, keyObj) => {
       const key = keyObj.key_name[_context.platform];
       memo[key] = keyObj.translations.reduce((memo1, translationObj) => {
-        if (translationObj.translation === (keysToUpdate[key] || {})[translationObj.language_iso]) {
-          delete keysToUpdate[key][translationObj.language_iso];
+        const lang = translationObj.language_iso;
+        if ((keysToUpdate[key] || {})[lang] !== undefined && (translationObj.translation === keysToUpdate[key][lang] ||
+            translationObj.modified_at_timestamp * 1000 > +new Date(diffSequence[lang][diffSequence[lang].length - 1].date))) {
+          delete keysToUpdate[key][lang];
         }
-        memo1[translationObj.language_iso] = translationObj.translation_id;
+        memo1[lang] = translationObj.translation_id;
         return memo1;
       }, {});
       return memo;
     }, {});
 
-    Object.keys(keysToUpdate).filter(key => !Object.keys(keysToUpdate[key]).length).forEach(key => delete keysToUpdate[key]);
+    Object.keys(keysToUpdate).filter(key => !Object.keys(keysToUpdate[key]).length || !(key in translationsIds)).forEach(key => delete keysToUpdate[key]);
 
+    // TODO compare translations edit date with commit date and prefer latest
     if (Object.keys(keysToUpdate).length) {
-      console.log(`Updating translations for following keys on Lokalise: ${Object.keys(keysToUpdate).toString()}`)
+      console.log(`Updating translations for following keys on Lokalise: : \n    ${Object.keys(keysToUpdate).join('\n    ')}`)
       for (const key in keysToUpdate) {
         for (const language in keysToUpdate[key]) {
-          await _lokalise.translations.update(
-              translationsIds[key][language],
-              { translation: keysToUpdate[key][language] },
-              { project_id: _context.projectId }
-          );
+          try {
+            await _lokalise.translations.update(
+                translationsIds[key][language],
+                { translation: keysToUpdate[key][language] },
+                { project_id: _context.projectId }
+            );
+          } catch(e) {
+            if(e.message === 'Expecting translation to be a JSON object with defined plural forms (UTF-8)') {
+
+            } else {
+              throw e;
+            }
+          }
         }
       }
       console.log('Update is done!');
@@ -127,16 +131,11 @@ module.exports = async (context, { LokaliseApi, fs }) => {
   }
 
   if (keysToDelete.size) {
-    const keysToDeleteData = await _lokalise.keys.list({
-      project_id: _context.projectId,
-      filter_platforms: _context.platform,
-      limit: 5000,
-      filter_keys: [...keysToDelete].toString()
-    });
+    const keysToDeleteData = await getRemoteKeys({ filter_keys: [ ...keysToDelete ].toString() });
 
-    if (keysToDeleteData.totalResults) {
-      const keyIdsToDelete = keysToDeleteData.items.map(keyObj => keyObj.key_id);
-      console.log(`Deleting keys from Lokalise: \n    ${keysToDeleteData.items.map(
+    if (keysToDeleteData.length) {
+      const keyIdsToDelete = keysToDeleteData.map(keyObj => keyObj.key_id);
+      console.log(`Deleting keys from Lokalise: \n    ${keysToDeleteData.map(
           keyObj => keyObj.key_name[_context.platform]).join('\n    ')}`);
       await _lokalise.keys.bulk_delete(keyIdsToDelete, { project_id: _context.projectId });
       console.log(`Delete request is done!`);
@@ -191,7 +190,10 @@ async function composeDiffSequence(compareResult) {
         if (!diffSequence[language]) {
           diffSequence[language] = [];
         }
-        diffSequence[language].push(jsonDifferenceResult);
+        diffSequence[language].push({
+          diff: jsonDifferenceResult,
+          date: commit.commit.committer.date
+        });
       }
 
       previousContents[language] = jsonFileContent;
@@ -216,7 +218,7 @@ async function getFileContent(path, ref) {
 function composeActionsFromDiffSequence (diffSequence, keysToCreate, keysToUpdate, keysToDelete) {
   Object.keys(diffSequence).forEach(language => {
     const fileDiffSequence = diffSequence[language];
-    fileDiffSequence.forEach(change => {
+    fileDiffSequence.forEach(({ diff: change }) => {
       Object.keys(change.new).forEach(key => {
         const normalizedKey = normalizeKey(key);
         if (!keysToCreate[normalizedKey]) {
@@ -233,26 +235,56 @@ function composeActionsFromDiffSequence (diffSequence, keysToCreate, keysToUpdat
         const normalizedKey = normalizeKey(key);
         if ((keysToCreate[normalizedKey] || {})[language]) {
           keysToCreate[normalizedKey][language] = edited[key].newvalue;
-        } else {
-          if (!keysToUpdate[normalizedKey]) {
-            keysToUpdate[normalizedKey] = {};
-          }
-          keysToUpdate[normalizedKey][language] = edited[key].newvalue;
         }
+        if (!keysToUpdate[normalizedKey]) {
+          keysToUpdate[normalizedKey] = {};
+        }
+        keysToUpdate[normalizedKey][language] = edited[key].newvalue;
       });
       Object.keys(change.removed).forEach(key => {
         key = normalizeKey(key);
         keysToDelete.add(key);
         if ((keysToCreate[key] || {})[language] !== undefined) {
           delete keysToCreate[key][language];
-          delete keysToUpdate[key][language];
           if (!Object.keys(keysToCreate[key]).length) {
+            keysToDelete.delete(key);
+          }
+        }
+        if ((keysToUpdate[key] || {})[language] !== undefined) {
+          delete keysToUpdate[key][language];
+          if (!Object.keys(keysToUpdate[key]).length) {
             keysToDelete.delete(key);
           }
         }
       })
     });
   });
+}
+
+async function getRemoteKeys (config = {}) {
+  const {
+    projectId,
+    platform,
+  } = _context;
+
+  const loadMore = async (page = 1) => await _lokalise.keys.list({
+    project_id: projectId,
+    filter_platforms: platform,
+    page,
+    limit: 5000,
+    ...config
+  });
+
+  let keys = [];
+
+  let newKeys;
+
+  for (let page = 1; !newKeys || newKeys.hasNextPage(); page++) {
+    newKeys = await loadMore(page);
+    keys = keys.concat(newKeys.items);
+  }
+
+  return keys;
 }
 
 function buildLokaliseCreateKeysRequest (toCreate) {
