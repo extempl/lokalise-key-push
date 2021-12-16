@@ -215,6 +215,9 @@ function composeActionsFromDiffSequence (diffSequence, keysToCreate, keysToUpdat
           keysToUpdate[normalizedKey] = {};
         }
         keysToUpdate[normalizedKey][language] = change.new[key];
+        if (keysToDelete.has(key)) {
+          keysToDelete.delete(key);
+        }
       });
       change.edited.forEach(edited => {
         const key = Object.keys(edited)[0];
@@ -224,6 +227,9 @@ function composeActionsFromDiffSequence (diffSequence, keysToCreate, keysToUpdat
         }
         if (!keysToUpdate[normalizedKey]) {
           keysToUpdate[normalizedKey] = {};
+        }
+        if (keysToDelete.has(key)) {
+          throw new Error("not possible to edit key after its deletion");
         }
         keysToUpdate[normalizedKey][language] = edited[key].newvalue;
       });
