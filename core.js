@@ -215,8 +215,8 @@ function composeActionsFromDiffSequence (diffSequence, keysToCreate, keysToUpdat
           keysToUpdate[normalizedKey] = {};
         }
         keysToUpdate[normalizedKey][language] = change.new[key];
-        if (keysToDelete.has(key)) {
-          keysToDelete.delete(key);
+        if (keysToDelete.has(normalizedKey)) {
+          keysToDelete.delete(normalizedKey);
         }
       });
       change.edited.forEach(edited => {
