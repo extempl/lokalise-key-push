@@ -85,7 +85,7 @@ module.exports = async (context, { LokaliseApi, fs }) => {
   const keysToUpdateList = [...new Set(Object.keys(keysToUpdate).concat(failedToCreateKeys))];
   if (keysToUpdateList.length) {
     const updateConfig = { include_translations: 1 };
-    if (keysToUpdateList.length < 1000) {
+    if (keysToUpdateList.toString().length < 6000) {
       updateConfig.filter_keys = keysToUpdateList.toString();
     }
     const keysToUpdateData = await getRemoteKeys(updateConfig);
