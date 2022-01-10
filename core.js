@@ -238,14 +238,18 @@ function composeActionsFromDiffSequence (diffSequence, keysToCreate, keysToUpdat
         keysToDelete.add(key);
         if ((keysToCreate[key] || {})[language] !== undefined) {
           delete keysToCreate[key][language];
-          if (!Object.keys(keysToCreate[key]).length) {
+          if (Object.keys(keysToCreate[key]).length) {
             keysToDelete.delete(key);
+          } else {
+            delete keysToCreate[key];
           }
         }
         if ((keysToUpdate[key] || {})[language] !== undefined) {
           delete keysToUpdate[key][language];
-          if (!Object.keys(keysToUpdate[key]).length) {
+          if (Object.keys(keysToUpdate[key]).length) {
             keysToDelete.delete(key);
+          } else {
+            delete keysToUpdate[key];
           }
         }
       })
