@@ -294,6 +294,10 @@ async function getRemoteKeys (config = {}) {
     keys = keys.concat(newKeys.items);
   }
 
+  if (config.filter_keys) {
+    keys = keys.filter(key => config.filter_keys.includes(key.key_name[platform]))
+  }
+
   return keys;
 }
 
