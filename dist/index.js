@@ -108,7 +108,7 @@ module.exports = async (context, { LokaliseApi, fs }) => {
 
     // TODO compare translations edit date with commit date and prefer latest
     if (Object.keys(keysToUpdate).length) {
-      console.log(`Updating translations for following keys on Lokalise: : \n    ${Object.keys(keysToUpdate).join('\n    ')}`)
+      console.log(`Updating translations for following keys on Lokalise: \n    ${Object.keys(keysToUpdate).join('\n    ')}`)
       for (const key in keysToUpdate) {
         for (const language in keysToUpdate[key]) {
           try {
@@ -243,7 +243,7 @@ function composeActionsFromDiffSequence (diffSequence, keysToCreate, keysToUpdat
           keysToUpdate[normalizedKey] = {};
         }
         if (keysToDelete.has(key)) {
-          throw new Error("not possible to edit key after its deletion");
+          keysToDelete.delete(normalizedKey);
         }
         keysToUpdate[normalizedKey][language] = edited[key].newvalue;
       });
