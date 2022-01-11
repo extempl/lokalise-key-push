@@ -216,7 +216,13 @@ async function getFileContent(path, ref) {
 }
 
 function composeActionsFromDiffSequence (diffSequence, keysToCreate, keysToUpdate, keysToDelete) {
-  Object.keys(diffSequence).forEach(language => {
+  Object.keys(diffSequence)
+  .sort((a, b) => {
+    if (a === 'en') return 1;
+    if (b === 'en') return -1;
+    return 0;
+  }) // 'en' always in the end
+  .forEach(language => {
     const fileDiffSequence = diffSequence[language];
     fileDiffSequence.forEach(({ diff: change }) => {
       Object.keys(change.new).forEach(key => {
@@ -242,21 +248,30 @@ function composeActionsFromDiffSequence (diffSequence, keysToCreate, keysToUpdat
         if (!keysToUpdate[normalizedKey]) {
           keysToUpdate[normalizedKey] = {};
         }
-        if (keysToDelete.has(key)) {
+        if (keysToDelete.has(normalizedKey)) {
           keysToDelete.delete(normalizedKey);
         }
         keysToUpdate[normalizedKey][language] = edited[key].newvalue;
       });
       Object.keys(change.removed).forEach(key => {
         key = normalizeKey(key);
-        keysToDelete.add(key);
         if ((keysToCreate[key] || {})[language] !== undefined) {
           delete keysToCreate[key][language];
-          if (Object.keys(keysToCreate[key]).length) {
-            keysToDelete.delete(key);
-          } else {
+          if (!Object.keys(keysToCreate[key]).length) {
             delete keysToCreate[key];
           }
+        }
+
+        if (language === 'en') {
+          keysToDelete.add(key);
+          if (key in keysToUpdate) {
+            delete keysToUpdate[key]
+          }
+        } else {
+          if (!keysToUpdate[key]) {
+            keysToUpdate[key] = {};
+          }
+          keysToUpdate[key][language] = '';
         }
         if ((keysToUpdate[key] || {})[language] !== undefined) {
           delete keysToUpdate[key][language];
