@@ -57,14 +57,20 @@ module.exports = async (context, { LokaliseApi, fs }) => {
   const keysToCreateList = Object.keys(keysToCreate);
   const failedToCreateKeys = [];
   if (keysToCreateList.length) {
-    const existingKeysResult = await getRemoteKeys({ filter_keys: keysToCreateList.toString() });
+    const createConfig = {};
+    if (keysToCreateList.toString().length < 6000) {
+      createConfig.filter_keys = keysToCreateList.toString();
+    }
+    const existingKeysResult = await getRemoteKeys(createConfig);
 
     let allToCreateInPlace = false;
     if (existingKeysResult.length < keysToCreateList.length) {
-      existingKeysResult.forEach(keyObj => {
-        delete keysToCreate[keyObj.key_name[_context.platform]];
+      Object.keys(keysToCreate).forEach(key => {
+        if (existingKeysResult.find(keyObj => keyObj.key_name[_context.platform] === key)) {
+          delete keysToCreate[key];
+        }
       })
-    } else {
+    } else if ('filter_keys' in createConfig) {
       allToCreateInPlace = true;
     }
 
@@ -106,7 +112,6 @@ module.exports = async (context, { LokaliseApi, fs }) => {
 
     Object.keys(keysToUpdate).filter(key => !Object.keys(keysToUpdate[key]).length || !(key in translationsIds)).forEach(key => delete keysToUpdate[key]);
 
-    // TODO compare translations edit date with commit date and prefer latest
     if (Object.keys(keysToUpdate).length) {
       console.log(`Updating translations for following keys on Lokalise: \n    ${Object.keys(keysToUpdate).join('\n    ')}`)
       for (const key in keysToUpdate) {
@@ -131,10 +136,14 @@ module.exports = async (context, { LokaliseApi, fs }) => {
   }
 
   if (keysToDelete.size) {
-    const keysToDeleteData = await getRemoteKeys({ filter_keys: [ ...keysToDelete ].toString() });
-
-    if (keysToDeleteData.length) {
-      const keyIdsToDelete = keysToDeleteData.map(keyObj => keyObj.key_id);
+    const deleteConfig = {};
+    const keysToDeleteList = [ ...keysToDelete ];
+    if (keysToDeleteList.toString().length < 6000) {
+      deleteConfig.filter_keys = keysToDeleteList.toString();
+    }
+    const keysToDeleteData = await getRemoteKeys(deleteConfig);
+    const keyIdsToDelete = keysToDeleteList.map(key => keysToDeleteData.find(keyObj => keyObj.key_name[_context.platform] === key).key_id);
+    if (keyIdsToDelete.length) {
       console.log(`Deleting keys from Lokalise: \n    ${keysToDeleteData.map(
           keyObj => keyObj.key_name[_context.platform]).join('\n    ')}`);
       await _lokalise.keys.bulk_delete(keyIdsToDelete, { project_id: _context.projectId });
@@ -149,7 +158,7 @@ async function composeDiffSequence(compareResult) {
   const diffSequence = {};
   // const filesContent = {};
   const previousContents = {};
-  for (const commit of compareResult.commits) {
+  for (const commit of compareResult.commits.filter(commit => commit.parents.length === 1)) {
     const { data: commitResult } = await _octokit.request(_octokitUrl + '/commits/{sha}', {
       sha: commit.sha
     });
@@ -259,6 +268,7 @@ function composeActionsFromDiffSequence (diffSequence, keysToCreate, keysToUpdat
           delete keysToCreate[key][language];
           if (!Object.keys(keysToCreate[key]).length) {
             delete keysToCreate[key];
+            keysToDelete.add(key); // deleting anyway, as it might have been already committed to the server
           }
         }
 
