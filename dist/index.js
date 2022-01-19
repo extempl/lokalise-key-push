@@ -142,7 +142,10 @@ module.exports = async (context, { LokaliseApi, fs }) => {
       deleteConfig.filter_keys = keysToDeleteList.toString();
     }
     const keysToDeleteData = await getRemoteKeys(deleteConfig);
-    const keyIdsToDelete = keysToDeleteList.map(key => keysToDeleteData.find(keyObj => keyObj.key_name[_context.platform] === key).key_id);
+    const keyIdsToDelete = keysToDeleteList.map(key => {
+      const foundKey = keysToDeleteData.find(keyObj => keyObj.key_name[_context.platform] === key);
+      return foundKey ? foundKey.key_id : null;
+    }).filter(keyId => keyId);
     if (keyIdsToDelete.length) {
       console.log(`Deleting keys from Lokalise: \n    ${keysToDeleteData.map(
           keyObj => keyObj.key_name[_context.platform]).join('\n    ')}`);
