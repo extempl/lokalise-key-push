@@ -50,7 +50,9 @@ module.exports = async (context, { LokaliseApi, fs }) => {
   const keysToUpdate = {};
   const keysToDelete = new Set();
 
-  composeActionsFromDiffSequence(diffSequence, keysToCreate, keysToUpdate, keysToDelete);
+  const supportedLanguages = (await _lokalise.languages.list({ project_id: _context.projectId })).items.map(i => i.lang_iso);
+
+  composeActionsFromDiffSequence(diffSequence, keysToCreate, keysToUpdate, keysToDelete, supportedLanguages);
 
   Object.keys(keysToCreate).filter(key => !Object.keys(keysToCreate[key]).length).forEach(key => delete keysToCreate[key]);
 
@@ -227,8 +229,8 @@ async function getFileContent(path, ref) {
   }
 }
 
-function composeActionsFromDiffSequence (diffSequence, keysToCreate, keysToUpdate, keysToDelete) {
-  Object.keys(diffSequence)
+function composeActionsFromDiffSequence (diffSequence, keysToCreate, keysToUpdate, keysToDelete, supportedLanguages) {
+  Object.keys(diffSequence).filter(l => supportedLanguages.includes(l))
   .sort((a, b) => {
     if (a === 'en') return 1;
     if (b === 'en') return -1;
@@ -243,10 +245,12 @@ function composeActionsFromDiffSequence (diffSequence, keysToCreate, keysToUpdat
           keysToCreate[normalizedKey] = {};
         }
         keysToCreate[normalizedKey][language] = change.new[key];
-        if (!keysToUpdate[normalizedKey]) {
-          keysToUpdate[normalizedKey] = {};
+        if (change.new[key]) {
+          if (!keysToUpdate[normalizedKey]) {
+            keysToUpdate[normalizedKey] = {};
+          }
+          keysToUpdate[normalizedKey][language] = change.new[key];
         }
-        keysToUpdate[normalizedKey][language] = change.new[key];
         if (keysToDelete.has(normalizedKey)) {
           keysToDelete.delete(normalizedKey);
         }
