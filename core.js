@@ -20,7 +20,7 @@ module.exports = async (context, { LokaliseApi, fs }) => {
   _octokit = new Octokit({ auth: _context.repoToken });
   _octokitUrl = `/repos/${_context.repository}`
 
-  const { data: compareResult } = await _octokit.request(_octokitUrl + '/compare/master...{ref}', { ref: context.ref });
+  const { data: compareResult } = await _octokit.request(_octokitUrl + '/compare/develop...{ref}', { ref: context.ref });
 
   if (compareResult.ahead_by === 0) {
     return "No ahead commits";
@@ -159,7 +159,7 @@ async function composeDiffSequence(compareResult) {
       const language = file.filename.match(filenamePattern)[1];
 
       const jsonFileContent = await getFileContent(file.filename, commit.sha).catch((e) => {
-        if (e.name === 'SyntaxError') {
+        if (e.name === 'SyntaxError' || e.status === 404) {
           return null;
         }
         throw e;
