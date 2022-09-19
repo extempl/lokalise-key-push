@@ -299,7 +299,7 @@ async function getRemoteKeys (config = {}) {
     project_id: projectId,
     filter_platforms: platform,
     page,
-    limit: 5000,
+    limit: 500,
     ...config
   });
 
