@@ -12,6 +12,7 @@ const platform = ghCore.getInput('platform');
 const filename = ghCore.getInput('filename');
 const useFilepath = ghCore.getInput('use-filepath');
 const ref = ghCore.getInput('ref');
+const targetRef = ghCore.getInput('target-ref');
 const repository = ghCore.getInput('repository');
 const repoToken = ghCore.getInput('repo-token');
 
@@ -25,6 +26,7 @@ core({
   filename,
   useFilepath,
   ref,
+  targetRef,
   repository,
   repoToken
 }, {

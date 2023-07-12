@@ -20,7 +20,10 @@ module.exports = async (context, { LokaliseApi, fs }) => {
   _octokit = new Octokit({ auth: _context.repoToken });
   _octokitUrl = `/repos/${_context.repository}`
 
-  const { data: compareResult } = await _octokit.request(_octokitUrl + '/compare/develop...{ref}', { ref: context.ref });
+  const { data: compareResult } = await _octokit.request(
+      _octokitUrl + '/compare/{targetRef}...{ref}',
+      { targetRef: context.targetRef, ref: context.ref }
+  );
 
   if (compareResult.ahead_by === 0) {
     return "No ahead commits";

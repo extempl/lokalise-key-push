@@ -28,6 +28,9 @@ inputs:
   ref:
     description: Branch ref for tagging
     required: false
+  target-ref:
+    description: Branch to compare with
+    required: true
   repository:
     description: github.repository
     required: true
