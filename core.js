@@ -13,7 +13,7 @@ let _octokitUrl;
 let _octokit;
 
 
-module.exports = async (context, { LokaliseApi, fs }) => {
+module.exports = async (context, { LokaliseApi, fs, debug }) => {
   _context = context;
   _lokalise = new LokaliseApi({ apiKey: context.apiKey });
   _fs = fs;
@@ -69,7 +69,7 @@ module.exports = async (context, { LokaliseApi, fs }) => {
     if (!allToCreateInPlace && Object.keys(keysToCreate).length > 0) {
       const createRequest = buildLokaliseCreateKeysRequest(keysToCreate);
       console.log(`Pushing ${createRequest.length} new keys to Lokalise`);
-      const createResult = await _lokalise.keys.create(createRequest, { project_id: _context.projectId });
+      const createResult = debug ? {items: []} : await _lokalise.keys.create(createRequest, { project_id: _context.projectId });
       createResult.items.forEach(keyObj => {
         delete keysToUpdate[keyObj.key_name[_context.platform]]
       });
@@ -108,11 +108,13 @@ module.exports = async (context, { LokaliseApi, fs }) => {
       for (const key in keysToUpdate) {
         for (const language in keysToUpdate[key]) {
           try {
-            await _lokalise.translations.update(
-                translationsIds[key][language],
-                { translation: keysToUpdate[key][language] },
-                { project_id: _context.projectId }
-            );
+            if (!debug) {
+              await _lokalise.translations.update(
+                  translationsIds[key][language],
+                  { translation: keysToUpdate[key][language] },
+                  { project_id: _context.projectId }
+              );
+            }
           } catch(e) {
             if(e.message === 'Expecting translation to be a JSON object with defined plural forms (UTF-8)') {
 
@@ -140,7 +142,9 @@ module.exports = async (context, { LokaliseApi, fs }) => {
     if (keyIdsToDelete.length) {
       console.log(`Deleting keys from Lokalise: \n    ${keysToDeleteData.map(
           keyObj => keyObj.key_name[_context.platform]).join('\n    ')}`);
-      await _lokalise.keys.bulk_delete(keyIdsToDelete, { project_id: _context.projectId });
+      if (!debug) {
+        await _lokalise.keys.bulk_delete(keyIdsToDelete, { project_id: _context.projectId });
+      }
       console.log(`Delete request is done!`);
     }
   }
@@ -278,14 +282,6 @@ function composeActionsFromDiffSequence (diffSequence, keysToCreate, keysToUpdat
             keysToUpdate[key] = {};
           }
           keysToUpdate[key][language] = '';
-        }
-        if ((keysToUpdate[key] || {})[language] !== undefined) {
-          delete keysToUpdate[key][language];
-          if (Object.keys(keysToUpdate[key]).length) {
-            keysToDelete.delete(key);
-          } else {
-            delete keysToUpdate[key];
-          }
         }
       })
     });
